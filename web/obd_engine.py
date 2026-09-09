@@ -20,6 +20,7 @@ class OBDEngine:
         "0110": {"name": "空气流量", "unit": "g/s", "formula": lambda a, b=0: round((a * 256 + b) / 100, 2)},
         "0111": {"name": "节气门位置", "unit": "%", "formula": lambda a, b=0: round(a * 100 / 255, 1)},
         "011F": {"name": "运行时间", "unit": "s", "formula": lambda a, b=0: a * 256 + b},
+        "0170":{"name": "长期燃油修正","unit": "%", "formula": lambda a, b=0: round((a - 128) * 100 / 255, 1)},
     }
 
     GAUGE_PIDS = ["010C", "010D", "0105", "0104", "0111", "0110"]

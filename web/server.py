@@ -83,16 +83,17 @@ def handle_connect_device(data):
                 port = data.get("port", "COM3")
                 baudrate = int(data.get("baudrate", 38400))
                 transport = SerialTransport(port=port, baudrate=baudrate)
+                print(f"[连接] 串口: {port} @ {baudrate}")
             elif conn_type == "tcp":
                 host = data.get("host", "127.0.0.1")
                 port = int(data.get("port", 35000))
                 transport = TCPTransport(host=host, port=port)
+                print(f"[连接] TCP: {host}:{port}")
             else:  # simulator
                 host = data.get("host", "127.0.0.1")
                 port = int(data.get("port", 35000))
                 transport = TCPTransport(host=host, port=port)
-
-            print(f"[连接] 目标: {transport.host}:{transport.port}")
+                print(f"[连接] 模拟器: {host}:{port}")
 
             with engine_lock:
                 if engine.is_connected:
