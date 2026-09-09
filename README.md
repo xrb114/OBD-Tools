@@ -1,9 +1,9 @@
 # OBD-II 模拟器
 
 OBD-II模拟器是一个基于Python的工具，用于模拟ELM327 OBD-II适配器连接到车辆。它支持标准的OBD-II PID和部分UDS诊断服务。
-
+新增web服务
 ## 功能特点
-
+- web控制器
 - 支持通过TCP/IP与OBD客户端通信
 - 支持标准的ELM327 AT命令
 - 支持常见的OBD-II PID模式01和模式03数据
@@ -53,11 +53,15 @@ pip install cryptography
 ```bash
 python obd_simulator.py [-a ADDRESS] [-p PORT] [-v]
 ```
-
 参数说明：
 - `-a, --address`: 监听地址，默认为localhost
 - `-p, --port`: 监听端口，默认为35000
 - `-v, --verbose`: 启用详细日志输出
+### web端
+```bash
+python -m web.server
+```
+
 
 ### 测试安全访问功能
 
