@@ -1,0 +1,10 @@
+# Web UI dependencies
+Flask>=3.0.0
+Flask-SocketIO>=5.3.0
+
+# Core dependencies
+pyserial>=3.5
+cryptography>=41.0.0
+
+# Optional: PyQt6 GUI (legacy)
+# PyQt6>=6.5.0

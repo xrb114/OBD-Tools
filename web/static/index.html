@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBD UDS 诊断终端 - 任天堂版</title>
+    <link href="https://fonts.loli.net/css2?family=ZCOOL+QingKe+HuangYou&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav id="sidebar">
+        <div class="sidebar-rainbow"></div>
+        <div class="sidebar-header">
+            <div class="logo-diamond">&#9670;</div>
+            <h1 class="logo-title">OBD 诊断终端</h1>
+            <div class="logo-sub">Nintendo Edition</div>
+            <div class="logo-ver">v2.0</div>
+        </div>
+        <div class="nav-items">
+            <button class="nav-btn active" data-page="dashboard">
+                <span class="nav-icon">&#9632;</span>
+                <span class="nav-text">实时仪表</span>
+            </button>
+            <button class="nav-btn" data-page="dtc">
+                <span class="nav-icon">&#9888;</span>
+                <span class="nav-text">故障诊断</span>
+            </button>
+            <button class="nav-btn" data-page="logger">
+                <span class="nav-icon">&#9642;</span>
+                <span class="nav-text">数据记录</span>
+            </button>
+            <button class="nav-btn" data-page="terminal">
+                <span class="nav-icon">&gt;_</span>
+                <span class="nav-text">命令终端</span>
+            </button>
+            <button class="nav-btn" data-page="settings">
+                <span class="nav-icon">&#9881;</span>
+                <span class="nav-text">连接设置</span>
+            </button>
+            <button class="nav-btn" data-page="security">
+                <span class="nav-icon">&#9919;</span>
+                <span class="nav-text">安全访问</span>
+            </button>
+        </div>
+        <div class="sidebar-footer">
+            <div class="status-indicator" id="globalStatus">
+                <span class="status-dot offline"></span>
+                <span class="status-text">未连接</span>
+            </div>
+        </div>
+        <div class="sidebar-rainbow-bottom"></div>
+    </nav>
+
+    <main id="content">
+        <!-- ═══ 实时仪表盘 ═══ -->
+        <section class="page active" id="page-dashboard">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 实时数据仪表盘</h2>
+                <button class="btn btn-action" id="btnStream">开始采集</button>
+            </div>
+            <div class="gauge-grid">
+                <div class="gauge-card gc-red">
+                    <canvas id="gauge-rpm" width="200" height="200"></canvas>
+                    <div class="gauge-label">发动机转速</div>
+                    <div class="gauge-value" id="val-rpm">--- <span class="gauge-unit">RPM</span></div>
+                </div>
+                <div class="gauge-card gc-blue">
+                    <canvas id="gauge-speed" width="200" height="200"></canvas>
+                    <div class="gauge-label">车速</div>
+                    <div class="gauge-value" id="val-speed">--- <span class="gauge-unit">km/h</span></div>
+                </div>
+                <div class="gauge-card gc-green">
+                    <canvas id="gauge-coolant" width="200" height="200"></canvas>
+                    <div class="gauge-label">冷却液温度</div>
+                    <div class="gauge-value" id="val-coolant">--- <span class="gauge-unit">&deg;C</span></div>
+                </div>
+                <div class="gauge-card gc-yellow">
+                    <canvas id="gauge-load" width="200" height="200"></canvas>
+                    <div class="gauge-label">发动机负荷</div>
+                    <div class="gauge-value" id="val-load">--- <span class="gauge-unit">%</span></div>
+                </div>
+                <div class="gauge-card gc-purple">
+                    <canvas id="gauge-throttle" width="200" height="200"></canvas>
+                    <div class="gauge-label">节气门位置</div>
+                    <div class="gauge-value" id="val-throttle">--- <span class="gauge-unit">%</span></div>
+                </div>
+                <div class="gauge-card gc-orange">
+                    <canvas id="gauge-maf" width="200" height="200"></canvas>
+                    <div class="gauge-label">空气流量</div>
+                    <div class="gauge-value" id="val-maf">--- <span class="gauge-unit">g/s</span></div>
+                </div>
+            </div>
+            <div class="extra-data">
+                <div class="extra-item">
+                    <span class="extra-name">短期燃油修正</span>
+                    <span class="extra-val" id="val-stft">--</span>
+                    <span class="extra-unit">%</span>
+                </div>
+                <div class="extra-item">
+                    <span class="extra-name">长期燃油修正</span>
+                    <span class="extra-val" id="val-ltft">--</span>
+                    <span class="extra-unit">%</span>
+                </div>
+                <div class="extra-item">
+                    <span class="extra-name">进气温度</span>
+                    <span class="extra-val" id="val-intake">--</span>
+                    <span class="extra-unit">&deg;C</span>
+                </div>
+                <div class="extra-item">
+                    <span class="extra-name">运行时间</span>
+                    <span class="extra-val" id="val-runtime">--</span>
+                    <span class="extra-unit">秒</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ 故障诊断 ═══ -->
+        <section class="page" id="page-dtc">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 故障诊断码 (DTC)</h2>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-action" id="btnReadDtc">&#128269; 读取故障码</button>
+                <button class="btn btn-danger" id="btnClearDtc">&#128465; 清除故障码</button>
+            </div>
+            <div class="dtc-status" id="dtcStatus">点击"读取故障码"开始诊断</div>
+            <div class="table-wrap">
+                <div class="table-title">&#9654; 故障码列表</div>
+                <table class="data-table" id="dtcTable">
+                    <thead><tr><th>故障码</th><th>系统</th><th>描述</th><th>状态</th></tr></thead>
+                    <tbody id="dtcBody"></tbody>
+                </table>
+            </div>
+            <div class="info-box">
+                <div class="info-title">&#9432; 故障码说明</div>
+                <p>P = 动力系统 | C = 底盘 | B = 车身 | U = 网络通信</p>
+                <p>读取故障码前请确保点火开关处于ON位置</p>
+            </div>
+        </section>
+
+        <!-- ═══ 数据记录 ═══ -->
+        <section class="page" id="page-logger">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 数据记录器</h2>
+            </div>
+            <div class="logger-controls">
+                <div class="control-group">
+                    <label class="control-label">采样间隔</label>
+                    <div class="input-row">
+                        <input type="number" id="logInterval" value="500" min="100" max="10000" class="nes-input">
+                        <span class="control-unit">毫秒</span>
+                    </div>
+                </div>
+                <button class="btn btn-action" id="btnRecord">&#9679; 开始录制</button>
+                <div class="logger-stats">
+                    <span id="recStatus" class="rec-status">就绪</span>
+                    <span id="recCount" class="rec-count">记录: 0</span>
+                    <span id="recFile" class="rec-file"></span>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <div class="table-title">&#9654; 实时数据快照</div>
+                <table class="data-table" id="liveTable">
+                    <thead><tr><th>PID</th><th>参数名称</th><th>数值</th><th>单位</th></tr></thead>
+                    <tbody id="liveBody"></tbody>
+                </table>
+            </div>
+            <div class="table-wrap">
+                <div class="table-header-row">
+                    <span class="table-title">&#9654; 历史日志文件</span>
+                    <button class="btn btn-small" id="btnRefreshLogs">刷新</button>
+                </div>
+                <table class="data-table" id="logTable">
+                    <thead><tr><th>文件名</th><th>大小</th><th>操作</th></tr></thead>
+                    <tbody id="logBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ═══ 命令终端 ═══ -->
+        <section class="page" id="page-terminal">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 命令终端</h2>
+                <button class="btn btn-small btn-purple" id="btnClearTerm">清屏</button>
+            </div>
+            <div class="quick-commands">
+                <button class="btn btn-quick" data-cmd="ATZ">ATZ<br><small>复位</small></button>
+                <button class="btn btn-quick" data-cmd="0100">0100<br><small>支持PID</small></button>
+                <button class="btn btn-quick" data-cmd="03">03<br><small>故障码</small></button>
+                <button class="btn btn-quick" data-cmd="0902">0902<br><small>VIN码</small></button>
+                <button class="btn btn-quick" data-cmd="ATH1">ATH1<br><small>显示头</small></button>
+                <button class="btn btn-quick" data-cmd="ATH0">ATH0<br><small>隐藏头</small></button>
+            </div>
+            <div class="terminal-output" id="termOutput">
+                <div class="term-line term-info">UDS 诊断终端已就绪</div>
+                <div class="term-line term-info">在下方输入 AT 或 OBD 命令</div>
+                <div class="term-line term-sep">────────────────────────────────</div>
+            </div>
+            <div class="terminal-input">
+                <span class="term-prompt">OBD&gt;</span>
+                <input type="text" id="termInput" class="nes-input term-field" placeholder="输入命令..." autocomplete="off">
+                <button class="btn btn-action" id="btnSend">发送</button>
+            </div>
+        </section>
+
+        <!-- ═══ 连接设置 ═══ -->
+        <section class="page" id="page-settings">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 连接设置</h2>
+            </div>
+            <div class="settings-panel">
+                <div class="panel-title">&#9654; 连接方式</div>
+                <div class="form-group">
+                    <label class="form-label">连接类型</label>
+                    <select id="connType" class="nes-select">
+                        <option value="simulator">OBD 模拟器 (本地)</option>
+                        <option value="tcp">WiFi/TCP ELM327</option>
+                        <option value="serial">USB/串口 ELM327</option>
+                    </select>
+                </div>
+                <div id="tcpConfig" class="config-section">
+                    <div class="form-group">
+                        <label class="form-label">IP 地址</label>
+                        <input type="text" id="tcpHost" class="nes-input" value="127.0.0.1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">端口号</label>
+                        <input type="number" id="tcpPort" class="nes-input" value="35000">
+                    </div>
+                </div>
+                <div id="serialConfig" class="config-section hidden">
+                    <div class="form-group">
+                        <label class="form-label">串口</label>
+                        <div class="input-row">
+                            <select id="serialPort" class="nes-select"></select>
+                            <button class="btn btn-small" id="btnRefreshPorts">刷新</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">波特率</label>
+                        <select id="serialBaud" class="nes-select">
+                            <option value="9600">9600</option>
+                            <option value="38400" selected>38400</option>
+                            <option value="115200">115200</option>
+                            <option value="230400">230400</option>
+                            <option value="460800">460800</option>
+                            <option value="921600">921600</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-connect" id="btnConnect">&#9654; 连接</button>
+                    <button class="btn btn-danger" id="btnDisconnect" disabled>&#10005; 断开</button>
+                </div>
+                <div class="conn-status" id="connStatus">状态: 未连接</div>
+            </div>
+            <div class="settings-panel">
+                <div class="panel-title">&#9654; ELM327 参数</div>
+                <div class="form-group">
+                    <label class="form-label">通信协议</label>
+                    <select id="protocol" class="nes-select">
+                        <option value="0">自动检测</option>
+                        <option value="1">ISO 15765-4 (CAN)</option>
+                        <option value="2">ISO 14230-4 (KWP2000)</option>
+                        <option value="3">ISO 9141-2</option>
+                        <option value="4">SAE J1850</option>
+                    </select>
+                </div>
+                <div class="checkbox-row">
+                    <label class="nes-checkbox">
+                        <input type="checkbox" id="showHeaders"> 显示数据头 (ATH1)
+                    </label>
+                    <label class="nes-checkbox">
+                        <input type="checkbox" id="showEcho"> 回显模式 (ATE1)
+                    </label>
+                </div>
+            </div>
+            <div class="settings-panel">
+                <div class="panel-title">&#9654; 连接日志</div>
+                <div class="log-area" id="connLog"></div>
+            </div>
+        </section>
+
+        <!-- ═══ 安全访问 ═══ -->
+        <section class="page" id="page-security">
+            <div class="page-header">
+                <h2 class="page-title">&#9654; 安全访问与认证</h2>
+            </div>
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="sec-access">0x27 种子/密钥</button>
+                <button class="tab-btn" data-tab="sec-auth">0x29 身份认证</button>
+            </div>
+            <div class="tab-content active" id="tab-sec-access">
+                <div class="settings-panel">
+                    <div class="panel-title">&#9654; 安全访问 (0x27) - 种子密钥模式</div>
+                    <div class="form-group">
+                        <label class="form-label">安全等级</label>
+                        <select id="secLevel" class="nes-select">
+                            <option value="1">Level 01 (标准)</option>
+                            <option value="3">Level 03</option>
+                            <option value="5">Level 05 (MD5)</option>
+                            <option value="11">Level 11</option>
+                        </select>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-action" id="btnReqSeed">&#128273; 请求种子</button>
+                        <button class="btn btn-connect" id="btnSendKey" disabled>&#128275; 发送密钥</button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">收到的种子值</label>
+                        <input type="text" id="secSeed" class="nes-input" readonly placeholder="等待种子...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">计算的密钥值</label>
+                        <input type="text" id="secKey" class="nes-input" readonly placeholder="等待计算...">
+                    </div>
+                    <div class="sec-status" id="secStatus">&#128274; 已锁定</div>
+                </div>
+            </div>
+            <div class="tab-content" id="tab-sec-auth">
+                <div class="settings-panel">
+                    <div class="panel-title">&#9654; 身份认证 (0x29)</div>
+                    <div class="form-group">
+                        <label class="form-label">子功能</label>
+                        <select id="authFunc" class="nes-select">
+                            <option value="01">01 - 取消认证</option>
+                            <option value="02">02 - 单向发送认证</option>
+                            <option value="03">03 - 单向接收认证</option>
+                            <option value="04">04 - 双向证书认证</option>
+                            <option value="05">05 - 挑战响应</option>
+                            <option value="06">06 - 所有权证明</option>
+                            <option value="07">07 - 验证服务器证书</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-action" id="btnAuth">&#9654; 执行认证</button>
+                </div>
+            </div>
+            <div class="settings-panel">
+                <div class="panel-title">&#9654; 通信日志</div>
+                <div class="log-area term-style" id="secLog"></div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <!-- <script src="/static/socket.io.min.js"></script> -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
