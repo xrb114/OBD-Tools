@@ -131,26 +131,63 @@ def handle_start_streaming(data=None):
     if not engine.is_connected:
         emit("error", {"message": "请先连接设备"})
         return
+
     interval = 500
+
     if data and "interval" in data:
         interval = int(data["interval"])
-    engine.start_streaming(interval)
-    emit("streaming_state", {"streaming": True}, broadcast=True)
 
-    # Start emitting data updates
+    engine.start_streaming(interval)
+
+    emit(
+        "streaming_state",
+        {"streaming": True},
+        broadcast=True,
+    )
+
     def emit_data():
+        logger.info(
+            "[实时数据] 数据流启动，间隔=%dms",
+            interval,
+        )
+
         while engine.is_streaming and engine.is_connected:
             try:
                 with engine_lock:
                     data = engine.read_all_pids()
-                socketio.emit("data_update", data)
-            except Exception:
-                pass
-            import time
-            time.sleep(interval / 1000.0)
 
-    t = threading.Thread(target=emit_data, daemon=True)
-    t.start()
+                if data:
+                    logger.info(
+                        "[实时数据] %s",
+                        data,
+                    )
+
+                    socketio.emit(
+                        "data_update",
+                        data,
+                    )
+
+            except Exception as e:
+                logger.exception(
+                    "[实时数据] 读取失败"
+                )
+
+                socketio.emit(
+                    "error",
+                    {
+                        "message": f"实时数据读取失败: {e}"
+                    },
+                )
+
+            socketio.sleep(
+                interval / 1000.0
+            )
+
+        logger.info("[实时数据] 数据流结束")
+
+    socketio.start_background_task(
+        emit_data
+    )
 
 
 @socketio.on("stop_streaming")
@@ -354,7 +391,7 @@ def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%H:%M:%S'
     )
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 8088))
     print(f"\n  UDS Terminal Web - Nintendo Editio v2")
     print(f"  http://localhost:{port}\n")
     socketio.run(app, host="0.0.0.0", port=port, debug=False)

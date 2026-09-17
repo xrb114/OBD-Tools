@@ -1,3 +1,0 @@
-[submodule "ELM327-emulator"]
-	path = ELM327-emulator
-	url = https://github.com/Ircama/ELM327-emulator.git

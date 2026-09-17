@@ -18,9 +18,9 @@ class OBDEngine:
         "010D": {"name": "车速", "unit": "km/h", "formula": lambda a, b=0: a},
         "010F": {"name": "进气温度", "unit": "°C", "formula": lambda a, b=0: a - 40},
         "0110": {"name": "空气流量", "unit": "g/s", "formula": lambda a, b=0: round((a * 256 + b) / 100, 2)},
-        "0111": {"name": "节气门位置", "unit": "%", "formula": lambda a, b=0: round(a * 100 / 255, 1)},
+        "0111": {"name": "节气开度", "unit": "%", "formula": lambda a, b=0: round(a * 100 / 255, 1)},
         "011F": {"name": "运行时间", "unit": "s", "formula": lambda a, b=0: a * 256 + b},
-        "0170":{"name": "长期燃油修正","unit": "%", "formula": lambda a, b=0: round((a - 128) * 100 / 255, 1)},
+        #"0170":{"name": "长期燃油修正","unit": "%", "formula": lambda a, b=0: round((a - 128) * 100 / 255, 1)},
     }
 
     GAUGE_PIDS = ["010C", "010D", "0105", "0104", "0111", "0110"]
@@ -96,37 +96,135 @@ class OBDEngine:
         return self._parse_pid_response(pid, response)
 
     def _parse_pid_response(self, pid: str, response: str) -> dict:
-        if not response or "NO DATA" in response or "ERROR" in response:
-            return {"pid": pid, "error": response or "无响应"}
+        if not response:
+            return {"pid": pid, "error": "无响应"}
+
+        upper_resp = response.upper()
+
+        if "NO DATA" in upper_resp:
+            return {"pid": pid, "error": "NO DATA", "raw": response}
+
+        if "ERROR" in upper_resp:
+            return {"pid": pid, "error": response, "raw": response}
+
         try:
-            clean_resp = response.replace(">", "").replace("\r", " ").replace("\n", " ")
-            hex_bytes = clean_resp.split()
+            # 清理 ELM327 输出
+            clean_resp = (
+                response
+                .replace(">", " ")
+                .replace("\r", " ")
+                .replace("\n", " ")
+            )
 
-            resp_prefix = hex(int(pid[:2], 16) + 0x40)[2:].upper() + pid[2:].upper()
-            try:
-                idx = hex_bytes.index(resp_prefix[:2])
-                data_start = idx + 2
-            except ValueError:
-                data_start = 2 if len(hex_bytes) > 2 else 0
+            # 只保留合法 HEX 字节
+            tokens = clean_resp.split()
+            hex_bytes = []
 
-            data_bytes = []
-            for h in hex_bytes[data_start:]:
-                try:
-                    data_bytes.append(int(h, 16))
-                except ValueError:
+            for token in tokens:
+                token = token.strip().upper()
+
+                # 只接受两个字符的 HEX Byte
+                if len(token) == 2:
+                    try:
+                        value = int(token, 16)
+                        hex_bytes.append(value)
+                    except ValueError:
+                        continue
+
+            if not hex_bytes:
+                return {
+                    "pid": pid,
+                    "error": "没有找到有效 HEX 数据",
+                    "raw": response
+                }
+
+            # 请求 PID，例如 010C
+            service = int(pid[:2], 16)
+            requested_pid = int(pid[2:], 16)
+
+            # 正常响应：
+            # 01 0C -> 41 0C
+            response_service = service + 0x40
+
+            # 寻找 [41, 0C]
+            header_index = -1
+
+            for i in range(len(hex_bytes) - 1):
+                if (
+                        hex_bytes[i] == response_service
+                        and hex_bytes[i + 1] == requested_pid
+                ):
+                    header_index = i
                     break
 
-            if pid in self.PID_DEFINITIONS and len(data_bytes) >= 1:
-                pdef = self.PID_DEFINITIONS[pid]
-                a = data_bytes[0] if len(data_bytes) > 0 else 0
-                b = data_bytes[1] if len(data_bytes) > 1 else 0
-                value = pdef["formula"](a, b)
-                return {"pid": pid, "name": pdef["name"], "value": value, "unit": pdef["unit"], "raw": response}
+            if header_index == -1:
+                return {
+                    "pid": pid,
+                    "error": f"未找到响应头 {response_service:02X} {requested_pid:02X}",
+                    "raw": response,
+                    "parsed": [f"{x:02X}" for x in hex_bytes]
+                }
 
-            return {"pid": pid, "value": response, "unit": "", "raw": response}
+            # 响应头后面的才是数据
+            data_bytes = hex_bytes[header_index + 2:]
+
+            if not data_bytes:
+                return {
+                    "pid": pid,
+                    "error": "PID 响应没有数据",
+                    "raw": response
+                }
+
+            pdef = self.PID_DEFINITIONS.get(pid)
+
+            if not pdef:
+                return {
+                    "pid": pid,
+                    "value": response,
+                    "unit": "",
+                    "raw": response
+                }
+
+            # 第一个数据字节
+            a = data_bytes[0]
+
+            # 第二个数据字节
+            b = data_bytes[1] if len(data_bytes) >= 2 else 0
+            logger.info(
+                "PID %s: raw=%r parsed=%s A=%02X B=%02X",
+                pid,
+                response,
+                [f"{x:02X}" for x in data_bytes],
+                a,
+                b
+            )
+
+            # 安全检查
+            if not (0 <= a <= 255):
+                raise ValueError(f"A 字节非法: {a}")
+
+            if not (0 <= b <= 255):
+                raise ValueError(f"B 字节非法: {b}")
+
+            value = pdef["formula"](a, b)
+
+            return {
+                "pid": pid,
+                "name": pdef["name"],
+                "value": value,
+                "unit": pdef["unit"],
+                "raw": response,
+                "bytes": [f"{a:02X}", f"{b:02X}"]
+            }
+
         except Exception as e:
-            return {"pid": pid, "error": str(e), "raw": response}
+            logger.exception("PID 解析失败")
 
+            return {
+                "pid": pid,
+                "error": str(e),
+                "raw": response
+            }
     def read_all_pids(self) -> dict:
         data = {}
         for pid in self.GAUGE_PIDS:
@@ -250,23 +348,19 @@ class OBDEngine:
     # ── Streaming ──
 
     def start_streaming(self, interval_ms: int = 500):
-        if self._streaming:
-            return
         self._streaming = True
         self._stream_interval = interval_ms / 1000.0
-        self._stream_thread = threading.Thread(target=self._stream_loop, daemon=True)
-        self._stream_thread.start()
 
     def stop_streaming(self):
         self._streaming = False
 
-    def _stream_loop(self):
+    """def _stream_loop(self):
         while self._streaming and self._connected:
             try:
                 self.read_all_pids()
             except Exception as e:
                 logger.error(f"数据流读取异常: {e}")
-            time.sleep(self._stream_interval)
+            time.sleep(self._stream_interval)"""
 
     # ── Security Access (0x27) ──
 

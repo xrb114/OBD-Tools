@@ -1,336 +1,799 @@
-# OBD-II 模拟器
+# OBD-TOOL
 
-OBD-II模拟器是一个基于Python的工具，用于模拟ELM327 OBD-II适配器连接到车辆。它支持标准的OBD-II PID和部分UDS诊断服务。
-新增web服务
+OBD-TOOL 是一个基于 Python 的 OBD-II / UDS 诊断工具，主要用于通过 **ELM327 兼容适配器**连接车辆，并提供 Web 端实时数据监控、OBD-II PID 读取、DTC 故障码读取以及 UDS 诊断功能。
+
+项目当前以 **Web 端为主要使用方式**，支持通过串口或 TCP/IP 连接真实 ELM327 设备。
+
+同时项目保留了一个自研的 `obd_simulator.py`，用于开发和测试 Web 端、ELM327 通信以及 OBD-II PID 解析，不依赖真实车辆即可进行基础功能测试。
+
+---
+
 ## 功能特点
-- web控制器
-- 支持通过TCP/IP与OBD客户端通信
-- 支持标准的ELM327 AT命令
-- 支持常见的OBD-II PID模式01和模式03数据
-- 动态模拟引擎数据（转速、速度、温度等）
-- 支持UDS诊断服务，包括：
-  - 0x27 安全访问（完整种子-密钥机制）
-  - 0x29 认证（基本认证和基于PKI的双向认证）
 
-## 测试工具
+### Web 诊断界面
 
-项目包含多个测试工具，用于验证不同的功能：
+* 基于 Flask + Socket.IO
+* 浏览器直接访问诊断界面
+* 实时显示车辆数据
+* Web Terminal
+* OBD-II PID 读取
+* DTC 故障码读取
+* VIN 读取
+* 实时数据流
+* TCP / 串口设备连接
+* 实时通信状态显示
+* 日志记录
 
-- `security_access_client.py`: 测试0x27安全访问功能，支持各种安全级别和测试场景
-- `test_security_access.py`: 综合测试脚本，自动测试0x27服务的所有功能点
-- `test_seed_expiry.py`: 专门测试种子过期功能
-- `auth_test_client.py`: 测试0x29基本认证功能
-- `auth_bidirectional_client.py`: 测试0x29双向认证功能
-- `obd_client.py`: 通用OBD-II客户端，用于监控和测试车辆基本数据（如发动机转速、车速、温度等）
-- `crypto_utils.py`: 加密工具库，提供RSA密钥生成、签名验证、挑战生成等功能，支持0x29认证服务
-- `crypto_keys.py`: 密钥管理工具，用于生成和保存服务器和客户端的RSA密钥对
-- `crypto_util_test.py`: 加密工具测试脚本，验证加密相关功能的正确性
+### OBD-II
 
-## 安装和运行
+支持常见的标准 OBD-II Mode 01 PID，包括：
 
-### 依赖项
+* 发动机转速
+* 车速
+* 发动机冷却液温度
+* 发动机负荷
+* 短期燃油修正
+* 长期燃油修正
+* 进气温度
+* MAF 空气流量
+* 节气门位置
+* 发动机运行时间
+* 燃油液位
+* 控制模块电压
 
-- Python 3.6+
-- 标准库
-- cryptography库（用于RSA密钥操作和哈希算法）
+同时支持：
 
-```bash
-pip install cryptography
+* Mode 03：读取故障码
+* Mode 09：读取车辆信息
+* VIN 读取
+* ELM327 AT 命令
+
+### UDS
+
+项目包含部分 UDS 诊断功能：
+
+* `0x27` Security Access
+* `0x29` Authentication
+* Seed / Key 认证流程
+* 多安全访问级别
+* 基于 RSA 的认证功能
+* 双向认证实验功能
+
+---
+
+#  项目结构
+
+```text
+OBD-TOOL/
+│
+├── web/                         # Web 版核心程序
+│   ├── server.py                # Flask + Socket.IO 服务
+│   ├── obd_engine.py            # OBD/UDS 协议引擎
+│   ├── transport.py             # TCP / Serial 通信层
+│   ├── dtc_database.py          # DTC 数据库
+│   │
+│   └── static/
+│       ├── index.html           # Web 主页面
+│       ├── app.js               # 前端逻辑
+│       ├── style.css            # 页面样式
+│       ├── socket.io.min.js     # Socket.IO 客户端
+│       └── fonts/               # Web 字体
+│
+├── obd_simulator.py             # 自研 OBD-II 测试模拟器
+│
+├── logs/                        # OBD 数据日志
+│
+└── requirements.txt             # Python 依赖
 ```
 
-### 密钥生成和配置
+---
 
-双向认证需要RSA密钥。首次运行时，系统会自动生成密钥对：
+#  快速开始
 
-- 服务器密钥对: `keys/server_keys.json`
-- 客户端密钥对: `keys/client_keys.json`
-- 客户端公钥: `keys/clients/<client_id>.json`
+## 1. 安装依赖
 
-客户端公钥必须提前导入服务器才能完成双向认证。使用双向认证客户端时会自动创建并保存这些密钥。
+建议使用 Python 3.10+。
 
-### 运行模拟器
+安装项目依赖：
 
 ```bash
-python obd_simulator.py [-a ADDRESS] [-p PORT] [-v]
+pip install -r requirements.txt
 ```
-参数说明：
-- `-a, --address`: 监听地址，默认为localhost
-- `-p, --port`: 监听端口，默认为35000
-- `-v, --verbose`: 启用详细日志输出
-### web端
+
+---
+
+#  启动 Web 服务
+
+Web 是当前项目的主要运行入口。
+
+在项目根目录执行：
+
 ```bash
 python -m web.server
 ```
 
+启动后，根据终端输出访问 Web 页面。
 
-### 测试安全访问功能
+通常为：
 
-使用安全访问测试客户端测试0x27安全访问功能：
-
-```bash
-python security_access_client.py [-a ADDRESS] [-p PORT] [-l LEVEL] [-i] [-w WAIT] [-v]
+```text
+http://127.0.0.1:8088
 ```
 
-参数说明：
-- `-a, --address`: OBD模拟器地址，默认为localhost
-- `-p, --port`: OBD模拟器端口，默认为35000
-- `-l, --level`: 安全访问级别，可选值为01、03、05、11，默认为01
-- `-i, --invalid`: 测试无效密钥（使用错误的密钥）
-- `-w, --wait`: 请求种子和发送密钥之间的等待时间(秒)，用于测试种子过期
-- `-v, --verbose`: 启用详细日志输出
+---
 
-### 综合测试安全访问功能
+#  连接真实 ELM327
 
-使用综合测试脚本测试所有0x27安全访问功能：
+Web 后端通过 `web/transport.py` 提供两种通信方式：
 
-```bash
-python test_security_access.py [-a ADDRESS] [-p PORT] [-t TEST] [-l LEVEL] [-v]
+```text
+                    ┌── SerialTransport ── USB/串口 ELM327
+Web
+ │
+ ▼
+server.py
+ │
+ ▼
+obd_engine.py
+ │
+ ▼
+transport.py
+ │
+ └── TCPTransport ─────── TCP/WiFi ELM327
 ```
 
-参数说明：
-- `-a, --address`: OBD模拟器地址，默认为localhost
-- `-p, --port`: OBD模拟器端口，默认为35000
-- `-t, --test`: 测试类型，可选值为all、success、invalid、expiry、attempts，默认为all
-- `-l, --level`: 安全访问级别，默认为01
-- `-v, --verbose`: 启用详细日志输出
+## 串口连接
 
-测试类型说明：
-- `success`: 测试正常的安全访问流程
-- `invalid`: 测试无效密钥情况
-- `expiry`: 测试种子过期情况
-- `attempts`: 测试连续多次尝试错误密钥导致的锁定
+例如：
 
-### 测试基本认证功能
-
-使用附带的测试客户端测试0x29基本认证功能：
-
-```bash
-python auth_test_client.py [-a ADDRESS] [-p PORT] [-f FUNC] [-i] [-v]
+```text
+COM4
+38400 baud
 ```
 
-参数说明：
-- `-a, --address`: OBD模拟器地址，默认为localhost
-- `-p, --port`: OBD模拟器端口，默认为35000
-- `-f, --func`: 认证子功能，可选值为01、02、03，默认为01
-- `-i, --invalid`: 测试无效认证（使用错误的响应值）
-- `-v, --verbose`: 启用详细日志输出
+Web 页面选择对应串口后连接设备。
 
-### 测试双向认证功能
+实际波特率取决于 ELM327 适配器。
 
-使用双向认证客户端测试基于非对称密钥的双向认证：
+---
 
-```bash
-python auth_bidirectional_client.py [-a ADDRESS] [-p PORT] [-c CLIENT_ID] [-v]
+## TCP 连接
+
+支持 TCP ELM327 设备，例如：
+
+```text
+192.168.1.100:35000
 ```
 
-参数说明：
-- `-a, --address`: OBD模拟器地址，默认为localhost
-- `-p, --port`: OBD模拟器端口，默认为35000
-- `-c, --client-id`: 客户端ID，默认为default_client
-- `-v, --verbose`: 启用详细日志输出
+输入：
 
-#### 双向认证注意事项
-
-1. 双向认证客户端目前使用简化的单向认证流程（0x2901子功能）
-2. 完整的双向认证流程（0x2904-0x2907子功能）实现在代码中，但需要进一步完善
-3. 确保`keys/clients/`目录包含客户端公钥文件，命名格式为`<client_id>.json`
-
-## 支持的OBD-II PID
-
-| PID   | 描述                   | 单位     |
-|-------|------------------------|----------|
-| 0100  | 支持的PID 01-20        |          |
-| 0101  | 监控状态               |          |
-| 0104  | 计算的发动机负载       | %        |
-| 0105  | 发动机冷却液温度       | °C       |
-| 0106  | 短期燃油修正 - 组1     | %        |
-| 0107  | 长期燃油修正 - 组1     | %        |
-| 010C  | 发动机转速             | RPM      |
-| 010D  | 车速                   | km/h     |
-| 010F  | 进气温度               | °C       |
-| 0110  | MAF空气流量率          | g/s      |
-| 0111  | 节气门位置             | %        |
-| 0113  | 氧传感器位置           |          |
-| 011C  | OBD标准                |          |
-| 011F  | 发动机运行时间         | 秒       |
-| 0121  | MIL行程距离            | km       |
-| 03    | 故障码 (DTC)           |          |
-| 0902  | 车辆识别号 (VIN)       |          |
-
-## 支持的UDS服务
-
-### 0x27 安全访问
-
-支持完整的安全访问功能，使用种子-密钥机制：
-
-#### 支持的安全访问级别
-
-- 0x2701/0x2702: 基本级别1 (请求种子/发送密钥)
-- 0x2703/0x2704: 基本级别2 (请求种子/发送密钥)
-- 0x2705/0x2706: 基本级别3 (请求种子/发送密钥)
-- 0x2711/0x2712: 扩展级别1 (请求种子/发送密钥)
-
-#### 安全访问过程
-
-1. 客户端发送请求种子命令(例如: `2701`)
-2. 服务器生成随机种子并返回(例如: `67 01 A5 B7 C9`)
-3. 客户端根据算法计算密钥
-4. 客户端发送密钥(例如: `2702 5A 48 36`)
-5. 服务器验证密钥并返回结果:
-   - 成功: `67 02`
-   - 失败: `7F 27 XX` (XX是错误代码)
-
-#### 安全访问错误代码
-
-- 0x12: 子功能不支持
-- 0x24: 请求顺序错误（未先请求种子或种子已过期）
-- 0x35: 无效密钥
-- 0x36: 超过尝试次数(连续3次失败后锁定10秒)
-- 0x37: 超时未过期
-
-#### 安全访问特性
-
-- **种子有效期**: 种子在生成后5秒内有效，超时后必须重新请求种子
-- **安全锁定**: 连续3次验证失败后，系统将锁定10秒，在此期间拒绝所有安全访问请求
-- **动态种子**: 每次请求生成随机种子，基于时间戳和随机数
-- **多级别算法**: 不同级别使用不同的种子-密钥算法，增强安全性
-
-#### 安全访问算法
-
-模拟器为不同级别实现了不同的种子-密钥算法：
-
-- 级别01: 反转字节 + XOR 0x5A
-- 级别03: 左移和异或，结合位置信息
-- 级别05: 使用MD5哈希算法
-- 级别11: 位置感知字节重排和异或
-
-### 0x29 认证
-
-#### 基本认证子功能（单向认证）
-
-支持三种基本认证子功能：
-- 0x2901: deAuthenticateAll 
-- 0x2902: authenticateOneSender
-- 0x2903: authenticateOneReceiver
-
-基本认证过程：
-1. 客户端发送子功能请求(例如: `2901`)
-2. 服务器返回认证挑战(例如: `69 01 AA BB CC DD`)
-3. 客户端计算响应并发送(例如: `2901 DD CC BB AA`)
-4. 服务器验证响应并返回结果:
-   - 成功: `69 01`
-   - 失败: `7F 29 XX` (XX是错误代码)
-
-错误代码:
-- 0x35: 无效密钥
-- 0x36: 超过尝试次数(连续3次失败后锁定10秒)
-- 0x37: 超时未过期
-
-#### 双向认证子功能（基于PKI）
-
-支持四种双向认证子功能：
-- 0x2904: bidirectionalCertificateExchange - 初始化双向认证，交换证书
-- 0x2905: challengeResponse - 挑战响应
-- 0x2906: verifyProofOfOwnership - 验证所有权证明
-- 0x2907: verifyServerCertificate - 验证服务器证书
-
-双向认证过程：
-1. **初始化双向认证**：
-   - 客户端发送: `2904 [客户端ID] [认证级别]`
-   - 服务器返回: `69 04 [服务器挑战] [服务器证书]`
-2. **挑战响应**：
-   - 客户端发送: `2905 [对服务器挑战的签名] [客户端挑战]`
-   - 服务器返回: `69 05 [对客户端挑战的签名]`
-3. **所有权验证**：
-   - 客户端发送: `2906 [所有权证明]`
-   - 服务器返回: `69 06`（成功）或错误码
-4. **证书验证**（可选）：
-   - 客户端发送: `2907`
-   - 服务器返回: `69 07 [服务器证书]`
-
-双向认证额外错误代码:
-- 0x24: 请求顺序错误
-- 0x58: 所有权验证失败
-- 0x51-0x57: 证书验证失败的各种原因
-
-## 已知问题和限制
-
-1. 完整的PKI双向认证流程（0x2904-0x2907）当前在实现中存在签名验证问题
-2. 客户端公钥必须手动配置在服务器的`keys/clients/`目录下
-3. auth_bidirectional_client.py默认使用简化的0x2901认证流程
-4. 服务器和客户端之间的签名格式可能需要进一步标准化
-5. 在某些终端环境下，长时间运行的测试可能会遇到Socket连接问题
-
-## 技术说明
-
-- 模拟器使用TCP/IP套接字通信，每个客户端连接由单独的线程处理
-- 动态数据通过后台线程自动更新，模拟真实车辆数据的变化
-- 支持标准的ELM327命令格式和响应格式
-- 认证功能遵循UDS (ISO 14229-1) 标准中的0x29服务定义
-- 双向认证实现了ISO 14229-1:2020中定义的UDS认证服务的基本流程
-- 使用RSA非对称密钥实现挑战-响应机制
-- 客户端和服务器使用PKCS#1 v1.5签名方案
-- 安全访问使用种子-密钥机制，完全符合ISO 14229-1中的0x27服务定义
-- 安全会话管理支持种子有效期、错误尝试锁定和动态种子生成
-
-
-## 开发计划
-
-1. 完善双向认证签名验证流程
-2. 增加动态密钥管理功能
-3. 实现基于ECDSA的签名机制
-4. 添加更多UDS诊断服务 (0x10, 0x11, 0x14, 0x19, 0x22, 0x2E, 0x31, 0x34, 0x36)
-5. 扩展安全访问算法，支持更多级别和更复杂的算法
-6. 添加实时会话管理和日志记录功能
-7. 实现基于Web的配置和监控界面
-
-## 参考资料
-
-- ELM327数据表: https://www.elmelectronics.com/products/ics/obd/
-- OBD-II PIDs (Wikipedia): https://en.wikipedia.org/wiki/OBD-II_PIDs
-- SAE J1979标准: 定义了OBD-II通信标准和PID
-- ISO 14229-1: 统一诊断服务(UDS)标准
-- ISO 15764: 安全数据传输
-- PKCS#1 v1.5: RSA加密标准 
-
-## Git脚本使用说明
-
-项目包含三个Git脚本，用于简化版本控制操作：
-
-### git_init.bat - 初始化仓库
-
-用于在新环境中初始化Git仓库：
-- 创建Git仓库
-- 自动生成适当的.gitignore文件
-- 添加基本文件并创建初始提交
-- 配置远程仓库
-- 执行首次推送
-
-```bash
-git_init.bat
+```text
+Host: 192.168.1.100
+Port: 35000
 ```
 
-### git_commit.bat - 提交更改
+即可通过 TCP 建立连接。
 
-用于提交所有更改：
-- 显示当前状态
-- 添加所有更改文件
-- 提交更改（可自定义提交信息）
-- 可选择推送到远程仓库
+---
 
-```bash
-git_commit.bat
+#  Web Terminal
+
+Web Terminal 可以直接发送 ELM327 命令。
+
+例如：
+
+```text
+ATZ
 ```
 
-### git_commit_selective.bat - 选择性提交
+返回：
 
-高级提交脚本，提供更多选项：
-- 提交所有更改
-- 选择性提交特定文件
-- 按文件类型提交
-- 提交前显示确认信息
-- 可选择推送到远程分支
+```text
+ELM327 v1.5
+```
+
+关闭回显：
+
+```text
+ATE0
+```
+
+选择自动协议：
+
+```text
+ATSP0
+```
+
+读取支持的 PID：
+
+```text
+0100
+```
+
+读取发动机转速：
+
+```text
+010C
+```
+
+读取车速：
+
+```text
+010D
+```
+
+读取冷却液温度：
+
+```text
+0105
+```
+
+读取发动机负荷：
+
+```text
+0104
+```
+
+读取节气门位置：
+
+```text
+0111
+```
+
+读取故障码：
+
+```text
+03
+```
+
+读取 VIN：
+
+```text
+0902
+```
+
+---
+
+# 📊 支持的 OBD-II PID
+
+| PID    | 描述            | 单位   |
+| ------ | ------------- | ---- |
+| `0100` | 支持的 PID 01-20 | -    |
+| `0101` | 监控状态          | -    |
+| `0104` | 计算的发动机负荷      | %    |
+| `0105` | 发动机冷却液温度      | °C   |
+| `0106` | 短期燃油修正        | %    |
+| `0107` | 长期燃油修正        | %    |
+| `010B` | 进气歧管绝对压力      | kPa  |
+| `010C` | 发动机转速         | RPM  |
+| `010D` | 车速            | km/h |
+| `010F` | 进气温度          | °C   |
+| `0110` | MAF 空气流量      | g/s  |
+| `0111` | 节气门位置         | %    |
+| `011F` | 发动机运行时间       | s    |
+| `012F` | 燃油液位          | %    |
+| `0142` | 控制模块电压        | V    |
+| `03`   | 故障码           | DTC  |
+| `0902` | VIN           | -    |
+
+---
+
+#  实时数据
+
+Web 页面支持实时轮询车辆 PID。
+
+默认主要监控：
+
+```text
+发动机转速
+车速
+冷却液温度
+发动机负荷
+节气门位置
+MAF 空气流量
+```
+
+数据流程：
+
+```text
+Web
+ │
+ ▼
+OBDEngine
+ │
+ ├── 010C RPM
+ ├── 010D Speed
+ ├── 0105 Coolant
+ ├── 0104 Load
+ ├── 0111 Throttle
+ └── 0110 MAF
+ │
+ ▼
+ELM327
+ │
+ ▼
+车辆 ECU
+```
+
+实时数据通过 Socket.IO 推送到浏览器。
+
+---
+
+#  自研 OBD-II 模拟器
+
+项目保留：
+
+```text
+obd_simulator.py
+```
+
+它不是 Web 系统运行的必要组件，而是一个用于开发和测试的独立工具。
+
+模拟器支持：
+
+* 虚拟发动机转速
+* 虚拟车速
+* 虚拟挡位
+* 虚拟油门
+* 虚拟冷却液温度
+* 虚拟蓄电池电压
+* OBD-II PID
+* ELM327 AT 命令
+* USB 串口通信
+* TCP/WiFi 通信
+* UDP 实时数据广播
+
+---
+
+## 启动模拟器
 
 ```bash
-git_commit_selective.bat
-``` 
+python obd_simulator.py
+```
+
+默认可以启动：
+
+```text
+USB:
+COM3 @ 38400
+
+TCP:
+0.0.0.0:35000
+
+UDP:
+35001
+```
+
+模拟器启动后，可以使用 Web OBD 工具连接：
+
+```text
+127.0.0.1:35000
+```
+
+这样可以在没有真实车辆和 ELM327 的情况下测试 Web 页面。
+
+---
+
+# 模拟器控制
+
+运行模拟器后：
+
+| 按键  | 功能     |
+| --- | ------ |
+| `W` | 增加油门   |
+| `S` | 减少油门   |
+| `A` | 降档     |
+| `D` | 升档     |
+| `R` | 设置目标转速 |
+| `Q` | 退出模拟器  |
+
+模拟器根据：
+
+```text
+转速
+挡位
+主减速比
+轮胎周长
+油门
+```
+
+计算车辆速度和发动机状态。
+
+---
+
+#  ELM327 AT 命令
+
+当前支持常见 AT 命令：
+
+```text
+ATZ
+ATI
+AT@1
+AT@2
+
+ATSP0
+ATSP6
+ATDP
+
+ATRV
+
+ATH0
+ATH1
+
+ATE0
+ATE1
+
+ATL0
+ATS0
+
+ATST0A
+```
+
+---
+
+#  DTC 故障码
+
+支持通过 Mode 03 读取故障码：
+
+```text
+03
+```
+
+例如：
+
+```text
+43 00 00 00 00 00 00
+```
+
+表示当前没有故障码。
+
+Web 端可以将 ECU 返回的 DTC 数据进一步转换为故障码描述。
+
+---
+
+#  UDS 0x27 Security Access
+
+项目提供 UDS `0x27` 安全访问相关测试功能。
+
+支持：
+
+```text
+2701 / 2702
+2703 / 2704
+2705 / 2706
+2711 / 2712
+```
+
+基本流程：
+
+```text
+Tester
+  │
+  │ 2701
+  ▼
+ECU
+  │
+  │ 67 01 + Seed
+  ▼
+Tester
+  │
+  │ 根据 Seed 计算 Key
+  │
+  │ 2702 + Key
+  ▼
+ECU
+  │
+  │ 67 02
+  ▼
+Security Access Granted
+```
+
+---
+
+## Security Access 测试
+
+运行：
+
+```bash
+python security_access_client.py
+```
+
+指定安全级别：
+
+```bash
+python security_access_client.py -l 01
+```
+
+测试错误密钥：
+
+```bash
+python security_access_client.py -l 01 -i
+```
+
+测试 Seed 超时：
+
+```bash
+python security_access_client.py -l 01 -w 6
+```
+
+---
+
+#  UDS 0x29 Authentication
+
+项目还包含 UDS `0x29` Authentication 实验功能。
+
+支持基础认证：
+
+```text
+2901
+2902
+2903
+```
+
+以及基于 PKI 的双向认证：
+
+```text
+2904
+2905
+2906
+2907
+```
+
+双向认证使用 RSA 密钥。
+
+密钥目录：
+
+```text
+keys/
+├── server_keys.json
+├── client_keys.json
+└── clients/
+    └── default_client.json
+```
+
+---
+
+#  测试工具
+
+## 0x27 Security Access
+
+```bash
+python security_access_client.py
+```
+
+综合测试：
+
+```bash
+python test_security_access.py
+```
+
+Seed 过期：
+
+```bash
+python test_seed_expiry.py
+```
+
+---
+
+## 0x29 Authentication
+
+基础认证：
+
+```bash
+python auth_test_client.py
+```
+
+双向认证：
+
+```bash
+python auth_bidirectional_client.py
+```
+
+---
+
+## OBD 客户端
+
+```bash
+python obd_client.py
+```
+
+用于测试基础 OBD-II 数据读取。
+
+---
+
+#  日志
+
+运行过程中产生的 OBD 数据可以保存到：
+
+```text
+logs/
+```
+
+例如：
+
+```text
+logs/
+├── obd_20260909_143853.csv
+├── obd_20260909_144837.csv
+├── obd_20260909_192207.csv
+└── obd_20260918_000500.csv
+```
+
+日志可以用于后续：
+
+* 数据分析
+* 车辆状态回放
+* PID 数据检查
+* 实时数据异常排查
+* 车辆测试记录
+
+---
+
+#  项目模块关系
+
+当前 Web 版本的核心链路：
+
+```text
+                    Browser
+                       │
+                       │ Socket.IO
+                       ▼
+               ┌───────────────┐
+               │ web/server.py │
+               └───────┬───────┘
+                       │
+                       ▼
+             ┌───────────────────┐
+             │ web/obd_engine.py │
+             └─────────┬─────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ web/transport.py│
+              └────────┬────────┘
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+       SerialTransport      TCPTransport
+             │                   │
+             ▼                   ▼
+          ELM327              ELM327
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+                    Vehicle
+                       │
+                       ▼
+                      ECU
+```
+
+---
+
+#  Web 运行所需文件
+
+如果只运行 Web 版本，核心文件主要是：
+
+```text
+web/
+├── __init__.py
+├── server.py
+├── obd_engine.py
+├── transport.py
+├── dtc_database.py
+└── static/
+    ├── index.html
+    ├── app.js
+    ├── style.css
+    ├── socket.io.min.js
+    └── fonts/
+```
+
+再加：
+
+```text
+requirements.txt
+```
+
+因此：
+
+```text
+gui/
+ELM327-emulator/
+```
+
+都不是 Web 版本的必要依赖。
+
+`obd_simulator.py` 也不是 Web 的运行依赖，仅用于测试。
+
+---
+
+#  开发建议
+
+推荐将项目划分为两个部分：
+
+```text
+生产使用
+│
+└── web/
+    ├── server.py
+    ├── obd_engine.py
+    ├── transport.py
+    └── static/
+
+测试
+│
+└──obd_simulator.py
+
+
+
+```
+
+这样 Web 核心与测试工具互相独立。
+
+---
+
+# ⚠️ 注意事项
+
+本项目中的 UDS Security Access、Authentication 以及相关密钥算法主要用于开发、测试和研究。
+
+实际车辆上的 UDS 服务、Seed/Key 算法、认证机制以及安全策略通常由具体 ECU 厂商实现，并不一定与本项目中的测试实现一致。
+
+连接真实车辆时，应确认：
+
+* ELM327 适配器工作正常
+* 串口参数正确
+* TCP 地址和端口正确
+* 车辆支持对应 OBD-II 服务
+* 不要向未知 ECU 随意发送写入或编程类 UDS 请求
+
+---
+
+# 📚 参考标准
+
+项目涉及的主要协议和标准：
+
+* ELM327
+* SAE J1979 / OBD-II
+* ISO 14229-1 / UDS
+* ISO 15764
+* PKCS#1
+* RSA
+
+---
+
+# 🗺️ 开发计划
+
+* [x] Web OBD 控制界面
+* [x] ELM327 AT 命令
+* [x] TCP ELM327 通信
+* [x] Serial ELM327 通信
+* [x] OBD-II Mode 01
+* [x] OBD-II Mode 03
+* [x] VIN 读取
+* [x] Web 实时数据
+* [x] DTC 数据库
+* [x] 自研 OBD-II 测试模拟器
+* [x] UDS 0x27 基础实现
+* [x] UDS 0x29 基础实现
+* [ ] 完善 UDS 诊断会话 `0x10`
+* [ ] ECU Reset `0x11`
+* [ ] Clear DTC `0x14`
+* [ ] Read DTC Information `0x19`
+* [ ] Read Data By Identifier `0x22`
+* [ ] Write Data By Identifier `0x2E`
+* [ ] Routine Control `0x31`
+* [ ] Request Download `0x34`
+* [ ] Transfer Data `0x36`
+* [ ] 完善 0x27 Seed/Key 管理
+* [ ] 完善 0x29 双向认证
+* [ ] 增加 ECDSA 支持
+* [ ] 完善实时日志系统
+* [ ] 增加数据回放功能
+* [ ] 增加更多车辆/ECU适配
+* [ ] 完善 Web 配置界面
+
+---
+
+#  License
+
+本项目主要用于汽车电子、OBD-II、UDS、诊断工具以及相关通信协议的学习、开发与测试。
